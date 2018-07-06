@@ -9,12 +9,12 @@
 //         : V1.30 2018-04-01 - Added ESP32 support
 //
 // **********************************************************************************
+#define ARDUINO_ARCH_ESP8266
 #if !defined(ARDUINO_ARCH_ESP8266) && !defined(ARDUINO_ARCH_ESP32) 
 #error "This sketch runs only on ESP32 or ESP8266 target"
 #endif 
 
-#include <ArduinoOTA.h>
-//#include <ESP8266WiFi.h>
+#include <ESP8266WiFi.h>
 #include <Ticker.h>
 #include <Wire.h>
 
@@ -32,41 +32,25 @@ extern "C" {
 // Setup your board configuration here
 // ===========================================
 
-// Wifi Credentials
-// Leaving * will try to connect with SDK saved credentials
-#define MY_SSID     "*******"
-#define MY_PASSWORD "*******"
+#define SDA_DISPLAY_PIN 4 //D2
+#define SDC_DISPLAY_PIN 0 //D3
 
-char ssid[33] ;
-char password[65];
+#define SDA_SCAN_PIN 12 // D6
+#define SDC_SCAN_PIN 14 // D5
 
-// I2C Pins Settings
-#ifdef ARDUINO_ARCH_ESP8266
-#define SDA_PIN 4
-#define SDC_PIN 5
-#else
-// Change this, depending on your board I2C pins used
-#define SDA_PIN 21
-#define SDC_PIN 22
-#endif
+#define RGB_LED_PIN 2 // D4
+#define RGB_LED_COUNT 2
 
 // Display Settings
 // OLED will be checked with this address and this address+1
 // so here 0x03c and 0x03d
 #define I2C_DISPLAY_ADDRESS 0x3c
 // Choose OLED Driver Type (one only)
-//#define OLED_SSD1306
-#define OLED_SH1106
+#define OLED_SSD1306
+//#define OLED_SH1106
 
 // RGB Led on GPIO0 comment this line if you have no RGB LED
-#define RGB_LED_PIN 0
 // Number of RGB Led (can be a ring or whatever) 
-#define RGB_LED_COUNT 1
-// Select The line of your LED Type (see NeoPixel Library)
-//#define RGB_TYPE NeoGrbwFeature
-//#define RGB_TYPE NeoRgbwFeature
-//#define RGB_TYPE NeoGrbFeature
-#define RGB_TYPE NeoRgbFeature
 
 // ===========================================
 // End of configuration
@@ -102,11 +86,7 @@ char password[65];
 #define COLOR_PINK           350
 
 #ifdef RGB_LED_PIN
-  #ifdef ARDUINO_ARCH_ESP8266
-    NeoPixelBus<RGB_TYPE, NeoEsp8266BitBang800KbpsMethod>rgb_led(RGB_LED_COUNT, RGB_LED_PIN);
-  #else
-    NeoPixelBus<RGB_TYPE, NeoEsp32BitBang800KbpsMethod>rgb_led(RGB_LED_COUNT, RGB_LED_PIN);
-  #endif
+NeoPixelBus<NeoRgbFeature, NeoEsp8266Dma400KbpsMethod>rgb_led(RGB_LED_COUNT, RGB_LED_PIN);
 #endif
 
 // Number of line to display for devices and Wifi
@@ -114,19 +94,14 @@ char password[65];
 #define WIFI_DISPLAY_NET    4
 
 // OLED Driver Instantiation
-#ifdef OLED_SSD1306
-SSD1306Wire  display(I2C_DISPLAY_ADDRESS, SDA_PIN, SDC_PIN);
-#else
-SH1106Wire  display(I2C_DISPLAY_ADDRESS, SDA_PIN, SDC_PIN);
-#endif
+SSD1306Wire  display(I2C_DISPLAY_ADDRESS, SDA_DISPLAY_PIN, SDC_DISPLAY_PIN);
 OLEDDisplayUi ui( &display );
 
 Ticker ticker;
-bool readyForUpdate = false;  // flag to launch update (I2CScan)
+bool readyForUpdate = true;  // flag to launch update (I2CScan)
 
-bool has_display          = false;  // if I2C display detected
+bool has_display          = true;  // if I2C display detected
 uint8_t NumberOfI2CDevice = 0;      // number of I2C device detected
-int8_t NumberOfNetwork    = 0;      // number of wifi networks detected
 uint8_t rgb_luminosity    = 50 ;    // Luminosity from 0 to 100%
 
 char i2c_dev[I2C_DISPLAY_DEVICE][32]; // Array on string displayed
@@ -212,6 +187,8 @@ void LedRGBOFF(uint16_t led)
   ====================================================================== */
 uint8_t i2c_scan(uint8_t address = 0xff)
 {
+  Wire.begin(SDA_SCAN_PIN, SDC_SCAN_PIN);
+  Wire.setClock(100000);
   uint8_t error;
   int nDevices;
   uint8_t start = 1 ;
@@ -252,6 +229,8 @@ uint8_t i2c_scan(uint8_t address = 0xff)
       }
       else if (address == 0x55 )
         strcpy(device, "BQ72441" );
+      else if (address == 0x77 )
+        strcpy(device, "BMP180" );
       else if (address == I2C_DISPLAY_ADDRESS || address == I2C_DISPLAY_ADDRESS + 1)
         strcpy(device, "OLED SSD1306" );
       else if (address >= 0x60 && address <= 0x62 ) {
@@ -297,23 +276,20 @@ uint8_t i2c_scan(uint8_t address = 0xff)
   Comments: -
   ====================================================================== */
 void updateData(OLEDDisplay *display) {
-  // connected
-  if ( WiFi.status() == WL_CONNECTED  ) {
-    LedRGBON(COLOR_GREEN);
-  } else {
-    LedRGBON(COLOR_ORANGE);
-  }
 
-  drawProgress(display, 0, "Scanning I2C...");
-  NumberOfI2CDevice = i2c_scan();
-  // Simulate slow scan to be able to see on display
-  for (uint8_t i = 1; i < 100; i++) {
-    drawProgress(display, i, "Scanning I2C...");
-    delay(2);
+  Serial.println(F("Starting Scan"));
+  uint8_t pbar = 0;
+  //LedRGBON(100,0);
+  Wire.begin(SDA_DISPLAY_PIN, SDC_DISPLAY_PIN);
+  for (pbar=0; pbar <= 100; pbar += 4 ){
+    drawProgress(display, pbar, F("Scanning I2C"));
   }
-  drawProgress(display, 100, "Done...");
+  NumberOfI2CDevice = i2c_scan();
+  Wire.begin(SDA_DISPLAY_PIN, SDC_DISPLAY_PIN);
+  drawFrameI2C(display,(OLEDDisplayUiState*) 0, 0, 0);
+  display->display();
   readyForUpdate = false;
-  LedRGBOFF();
+  //LedRGBOFF();
 }
 
 /* ======================================================================
@@ -327,7 +303,6 @@ void updateData(OLEDDisplay *display) {
   Comments: -
   ====================================================================== */
 void drawProgress(OLEDDisplay *display, int percentage, String labeltop, String labelbot) {
-  if (has_display) {
     display->clear();
     display->setTextAlignment(TEXT_ALIGN_CENTER);
     display->setFont(Roboto_Condensed_Bold_Bold_16);
@@ -335,7 +310,6 @@ void drawProgress(OLEDDisplay *display, int percentage, String labeltop, String 
     display->drawProgressBar(10, 28, 108, 12, percentage);
     display->drawString(64, 48, labelbot);
     display->display();
-  }
 }
 
 /* ======================================================================
@@ -349,24 +323,6 @@ void drawProgress(OLEDDisplay *display, int percentage, String labeltop, String 
   ====================================================================== */
 void drawProgress(OLEDDisplay *display, int percentage, String labeltop ) {
   drawProgress(display, percentage, labeltop, String(""));
-}
-
-/* ======================================================================
-  Function: drawFrameWifi
-  Purpose : WiFi logo and IP address
-  Input   : OLED display pointer
-  Output  : -
-  Comments: -
-  ====================================================================== */
-void drawFrameWifi(OLEDDisplay *display, OLEDDisplayUiState* state, int16_t x, int16_t y) {
-  display->clear();
-  display->setTextAlignment(TEXT_ALIGN_CENTER);
-  display->setFont(Roboto_Condensed_Bold_Bold_16);
-  // see http://blog.squix.org/2015/05/esp8266-nodemcu-how-to-create-xbm.html
-  // on how to create xbm files
-  display->drawXbm( x + (128 - WiFi_width) / 2, 0, WiFi_width, WiFi_height, WiFi_bits);
-  display->drawString(x + 64, WiFi_height + 4, WiFi.localIP().toString());
-  ui.disableIndicator();
 }
 
 /* ======================================================================
@@ -395,38 +351,6 @@ void drawFrameI2C(OLEDDisplay *display, OLEDDisplayUiState* state, int16_t x, in
   ui.disableIndicator();
 }
 
-/* ======================================================================
-  Function: drawFrameNet
-  Purpose : WiFi network info screen (called by OLED ui)
-  Input   : OLED display pointer
-  Output  : -
-  Comments: -
-  ====================================================================== */
-void drawFrameNet(OLEDDisplay *display, OLEDDisplayUiState* state, int16_t x, int16_t y) {
-  char buff[64];
-  sprintf(buff, "%d Wifi Network", NumberOfNetwork);
-  display->clear();
-  display->setTextAlignment(TEXT_ALIGN_CENTER);
-  display->setFont(Roboto_Condensed_Bold_Bold_16);
-  display->drawString(x + 64, y + 0 , buff);
-  display->setTextAlignment(TEXT_ALIGN_LEFT);
-  display->setFont(Roboto_Condensed_12);
-
-  for (int i = 0; i < NumberOfNetwork; i++) {
-    // Print SSID and RSSI for each network found
-    if (i < WIFI_DISPLAY_NET) {
-
-      #ifdef ARDUINO_ARCH_ESP8266
-      sprintf(buff, "%s %c", WiFi.SSID(i).c_str(), WiFi.encryptionType(i) == ENC_TYPE_NONE ? ' ' : '*' );
-      #else  
-      sprintf(buff, "%s %c", WiFi.SSID(i).c_str(), WiFi.encryptionType(i) == WIFI_AUTH_OPEN ? ' ' : '*' );
-      #endif
-      display->drawString(x + 0, y + 16 + 12 * i, buff);
-    }
-  }
-
-  ui.disableIndicator();
-}
 
 /* ======================================================================
   Function: drawFrameLogo
@@ -443,8 +367,8 @@ void drawFrameLogo(OLEDDisplay *display, OLEDDisplayUiState* state, int16_t x, i
 
 // this array keeps function pointers to all frames
 // frames are the single views that slide from right to left
-FrameCallback frames[] = { drawFrameWifi, drawFrameI2C, drawFrameNet, drawFrameLogo};
-int numberOfFrames = 4;
+FrameCallback frames[] = { drawFrameI2C };
+int numberOfFrames = 1;
 
 
 /* ======================================================================
@@ -473,8 +397,7 @@ void setup()
   Serial.begin(115200);
   // I like to know what sketch is running on board
   Serial.print(F("\r\nBooting on "));
-  Serial.println(ARDUINO_BOARD);
-  Serial.printf_P( PSTR("Scan-I2C-WiFi.ino on %s %s %s\n"), ARDUINO_BOARD, __DATE__ , __TIME__ );
+  Serial.printf_P( PSTR("Scan-I2C-ino on %s %s %s\n"), "LOLWUT", __DATE__ , __TIME__ );
   #ifdef ARDUINO_ARCH_ESP8266
     Serial.print(F("ESP8266 Core Version "));
     Serial.println(ESP.getCoreVersion());
@@ -491,19 +414,9 @@ void setup()
     chipid=ESP.getEfuseMac();
   #endif
 
-  LedRGBOFF();
 
   //Wire.pins(SDA, SCL);
-  Wire.begin(SDA_PIN, SDC_PIN);
-  Wire.setClock(100000);
 
-  if (i2c_scan(I2C_DISPLAY_ADDRESS)) {
-    has_display = true;
-  } else {
-    if (i2c_scan(I2C_DISPLAY_ADDRESS + 1)) {
-      has_display = true;
-    }
-  }
 
   if (has_display) {
     Serial.println(F("Display found"));
@@ -517,167 +430,24 @@ void setup()
     display.setFont(ArialMT_Plain_10);
     display.setTextAlignment(TEXT_ALIGN_CENTER);
     display.setContrast(255);
-    delay(500);
+    delay(200);
   }
 
   // Set WiFi to station mode and disconnect from an AP if it was previously connected
-  WiFi.mode(WIFI_STA);
-  delay(100);
-
-  strcpy(ssid, MY_SSID);
-  strcpy(password, MY_PASSWORD);
-
-  // empty sketch SSID, try with SDK ones
-  if ( *ssid == '*' && *password == '*' ) {
-    // empty sketch SSID, try autoconnect with SDK saved credentials
-    Serial.println(F("No SSID/PSK defined in sketch\r\nConnecting with SDK ones if any"));
-    #ifdef ARDUINO_ARCH_ESP8266
-    struct station_config conf;
-    wifi_station_get_config(&conf);
-    strcpy(ssid, reinterpret_cast<char*>(conf.ssid));
-    strcpy(password, reinterpret_cast<char*>(conf.password));
-    #endif
-  }
-
-  Serial.println(F("WiFi scan start"));
-  drawProgress(&display, pbar, F("Scanning WiFi"));
-
-  // WiFi.scanNetworks will return the number of networks found
-  led_color = 0;
-  NumberOfNetwork = 0;
-  WiFi.scanNetworks(true);
-  // Async, wait start
-  while (WiFi.scanNetworks() != WIFI_SCAN_RUNNING );
-
-  do {
-    LedRGBON(led_color);
-    delay(5);
-
-    // Rainbow loop
-    if (++led_color > 360)
-      led_color = 360;
-
-    // WiFi scan max 50% of progress bar
-    pbar = led_color * 100 / 360 / 2;
-    drawProgress(&display, pbar, F("Scanning WiFi"));
-
-    NumberOfNetwork = WiFi.scanComplete();
-    //Serial.printf("NumberOfNetwork=%d\n", NumberOfNetwork);
-  } while (NumberOfNetwork == WIFI_SCAN_RUNNING || NumberOfNetwork == WIFI_SCAN_FAILED);
-
-  Serial.println(F("scan done"));
-
-  LedRGBOFF();
-
-  Serial.println(F("I2C scan start"));
-  pbar = 50;
-  drawProgress(&display, pbar, F("Scanning I2C"));
-  delay(200);
-  NumberOfI2CDevice = i2c_scan();
-  Serial.println(F("scan done"));
-
-  // Set Hostname for OTA and network (add only 2 last bytes of last MAC Address)
-  sprintf_P(thishost, PSTR("ScanI2CWiFi-%04X"), chipid & 0xFFFF);
-
-  Serial.printf("connecting to %s with psk %s\r\n", ssid, password );
-  WiFi.begin(ssid, password);
 
   // Loop until connected or 20 sec time out
-#define WIFI_TIME_OUT 20
-  unsigned long this_start = millis();
-  led_color = 360;
-  while ( WiFi.status() != WL_CONNECTED && millis() - this_start < (WIFI_TIME_OUT * 1000) ) {
-    // 125 ms wait
-    for (uint8_t j = 0; j < 125; j++) {
-      // Rainbow loop
-      LedRGBON(led_color);
-      if (led_color == 0) {
-        led_color = 360;
-      } else {
-        led_color--;
-      }
-      delay(1);
-    }
-    if (pbar++ > 99) {
-      pbar = 99;
-    }
-    drawProgress(&display, pbar, F("Connecting WiFi"), ssid);
-  }
-
-  if (  WiFi.status() == WL_CONNECTED  ) {
-    Serial.printf("OK from %s@", thishost);
-    Serial.println(WiFi.localIP());
-  } else {
-    Serial.println(F("Error unable to connect to WiFi"));
-  }
-
-  LedRGBOFF();
-
-  Serial.println(F("Setup done"));
-  drawProgress(&display, 100, F("Setup Done"));
-
-  ArduinoOTA.setHostname(thishost);
-  ArduinoOTA.begin();
-
-  // OTA callbacks
-  ArduinoOTA.onStart([]() {
-    // Light of the LED, stop animation
-    LedRGBOFF();
-    Serial.println(F("\r\nOTA Starting"));
-    drawProgress(&display, 0, "Starting OTA");
-  });
-
-  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    char buff[8];
-    uint8_t percent = progress / (total / 100);
-    sprintf(buff, "%d%%", percent);
-    drawProgress(&display, percent, "Uploading", String(buff));
-    Serial.printf("%03d %%\r", percent);
-
-    // hue from 0.0 to 1.0 (rainbow) with 33% (of 0.5f) luminosity
-    // With blink
-    if (percent % 4 >= 2) {
-      LedRGBON( percent * 360 / 100);
-    } else {
-      LedRGBOFF();
-    }
-
-  });
-
-  ArduinoOTA.onEnd([]() {
-    LedRGBON(COLOR_ORANGE);
-    if (has_display) {
-      display.clear();
-      //display.setTextAlignment(TEXT_ALIGN_CENTER);
-      //display.setFont(Roboto_Condensed_Bold_Bold_16);
-      display.drawString(64,  8, F("Writing Flash"));
-      display.drawString(64, 22, F("..."));
-      display.drawString(64, 40, F("Please wait"));
-      display.display();
-    }
-
-    Serial.println(F("\r\nDone Rebooting"));
-  });
-
-  ArduinoOTA.onError([](ota_error_t error) {
-    LedRGBON(COLOR_RED);
-    drawProgress(&display, 0, "Error");
-    Serial.println(F("\r\nError"));
-  });
-
   if (has_display) {
     ui.setTargetFPS(30);
     ui.setFrameAnimation(SLIDE_LEFT);
     ui.setFrames(frames, numberOfFrames);
     ui.init();
+    ui.disableAutoTransition();
     display.flipScreenVertically();
   }
 
-  //updateData(&display);
 
-  // Rescan I2C every 10 seconds
-  ticker.attach(10, setReadyForUpdate);
-
+  // Rescan I2C every 5 seconds
+  ticker.attach(5, setReadyForUpdate);
 }
 
 /* ======================================================================
@@ -687,25 +457,10 @@ void setup()
 void loop()
 {
   if (has_display) {
-    if (readyForUpdate && ui.getUiState()->frameState == FIXED) {
-      updateData(&display);
-    }
-
-    int remainingTimeBudget = ui.update();
-
-    if (remainingTimeBudget > 0) {
-      // You can do some work here
-      // Don't do stuff if you are below your
-      // time budget.
-      delay(remainingTimeBudget);
-    }
-  } else {
     if (readyForUpdate ) {
       updateData(&display);
     }
   }
 
-  // Handle OTA
-  ArduinoOTA.handle();
 }
 
