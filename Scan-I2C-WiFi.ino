@@ -12,9 +12,9 @@
 #define ARDUINO_ARCH_ESP8266
 #if !defined(ARDUINO_ARCH_ESP8266) && !defined(ARDUINO_ARCH_ESP32) 
 #error "This sketch runs only on ESP32 or ESP8266 target"
-#endif 
+#endif
 
-#include <ESP8266WiFi.h>
+//#include <ESP8266WiFi.h>
 #include <Ticker.h>
 #include <Wire.h>
 
@@ -85,9 +85,6 @@ extern "C" {
 #define COLOR_MAGENTA        300
 #define COLOR_PINK           350
 
-#ifdef RGB_LED_PIN
-NeoPixelBus<NeoRgbFeature, NeoEsp8266Dma400KbpsMethod>rgb_led(RGB_LED_COUNT, RGB_LED_PIN);
-#endif
 
 // Number of line to display for devices and Wifi
 #define I2C_DISPLAY_DEVICE  4
@@ -102,81 +99,12 @@ bool readyForUpdate = true;  // flag to launch update (I2CScan)
 
 bool has_display          = true;  // if I2C display detected
 uint8_t NumberOfI2CDevice = 0;      // number of I2C device detected
-uint8_t rgb_luminosity    = 50 ;    // Luminosity from 0 to 100%
+uint8_t animation = 0;      // number of I2C device detected
 
 char i2c_dev[I2C_DISPLAY_DEVICE][32]; // Array on string displayed
 
-#ifdef RGB_LED_PIN
-void LedRGBOFF(uint16_t led = 0);
-void LedRGBON (uint16_t hue, uint16_t led = 0);
-#else
-void LedRGBOFF(uint16_t led = 0) {};
-void LedRGBON (uint16_t hue, uint16_t led = 0) {};
-#endif
 
 
-#ifdef RGB_LED_PIN
-/* ======================================================================
-  Function: LedRGBON
-  Purpose : Set RGB LED strip color, but does not lit it
-  Input   : Hue of LED (0..360)
-          led number (from 1 to ...), if 0 then all leds
-  Output  : -
-  Comments:
-  ====================================================================== */
-void LedRGBON (uint16_t hue, uint16_t led)
-{
-  uint8_t start = 0;
-  uint8_t end   = RGB_LED_COUNT - 1; // Start at 0
-
-  // Convert to neoPixel API values
-  // H (is color from 0..360) should be between 0.0 and 1.0
-  // S is saturation keep it to 1
-  // L is brightness should be between 0.0 and 0.5
-  // rgb_luminosity is between 0 and 100 (percent)
-  RgbColor target = HslColor( hue / 360.0f, 1.0f, 0.005f * rgb_luminosity);
-
-  // just one LED ?
-  // Strip start 0 not 1
-  if (led) {
-    led--;
-    start = led ;
-    end   = start ;
-  }
-
-  for (uint8_t i = start ; i <= end; i++) {
-    rgb_led.SetPixelColor(i, target);
-    rgb_led.Show();
-  }
-}
-
-/* ======================================================================
-  Function: LedRGBOFF
-  Purpose : light off the RGB LED strip
-  Input   : Led number starting at 1, if 0=>all leds
-  Output  : -
-  Comments: -
-  ====================================================================== */
-void LedRGBOFF(uint16_t led)
-{
-  uint8_t start = 0;
-  uint8_t end   = RGB_LED_COUNT - 1; // Start at 0
-
-  // just one LED ?
-  if (led) {
-    led--;
-    start = led ;
-    end   = start ;
-  }
-
-  // stop animation, reset params
-  for (uint8_t i = start ; i <= end; i++) {
-    // clear the led strip
-    rgb_led.SetPixelColor(i, RgbColor(0));
-    rgb_led.Show();
-  }
-}
-#endif
 
 /* ======================================================================
   Function: i2cScan
@@ -268,56 +196,45 @@ uint8_t i2c_scan(uint8_t address = 0xff)
 }
 
 
-/* ======================================================================
-  Function: updateData
-  Purpose : update by rescanning I2C bus
-  Input   : OLED display pointer
-  Output  : -
-  Comments: -
-  ====================================================================== */
 void updateData(OLEDDisplay *display) {
 
-  Serial.println(F("Starting Scan"));
   uint8_t pbar = 0;
-  //LedRGBON(100,0);
-  Wire.begin(SDA_DISPLAY_PIN, SDC_DISPLAY_PIN);
-  for (pbar=0; pbar <= 100; pbar += 4 ){
-    drawProgress(display, pbar, F("Scanning I2C"));
-  }
   NumberOfI2CDevice = i2c_scan();
   Wire.begin(SDA_DISPLAY_PIN, SDC_DISPLAY_PIN);
-  drawFrameI2C(display,(OLEDDisplayUiState*) 0, 0, 0);
-  display->display();
-  readyForUpdate = false;
-  //LedRGBOFF();
-}
-
-void drawDickbutt(OLEDDisplay *display, int frame){
-  display->clear();
-  display->drawXbm(0, 0, dickbutt_width, dickbutt_height, dickbutt_frames[frame]);
-}
-
-void drawProgress(OLEDDisplay *display, int percentage, String labeltop, String labelbot) {
-    display->clear();
-    display->setTextAlignment(TEXT_ALIGN_CENTER);
-    display->setFont(Roboto_Condensed_Bold_Bold_16);
-    display->drawString(64, 8, labeltop);
-    display->drawProgressBar(10, 28, 108, 12, percentage);
-    display->drawString(64, 48, labelbot);
+  if (NumberOfI2CDevice != 0){
+    drawFrameI2C(display,(OLEDDisplayUiState*) 0, 0, 0);
     display->display();
+  }else {
+    animation++;
+    if ((animation/2) %2){
+      for (pbar=0; pbar <= 254; pbar+=1 ){
+          drawWbutt(display, pbar);
+      }
+    }else{
+      for (pbar=0; pbar < 56; pbar+=1 ){
+          drawDickbutt(display, pbar);
+      }
+    }
+  };
+  readyForUpdate = false;
 }
 
-/* ======================================================================
-  Function: drawProgress
-  Purpose : prograss indication
-  Input   : OLED display pointer
-          percent of progress (0..100)
-          String above progress bar
-  Output  : -
-  Comments: -
-  ====================================================================== */
-void drawProgress(OLEDDisplay *display, int percentage, String labeltop ) {
-  drawProgress(display, percentage, labeltop, String(""));
+#define fbutt_maxframe 14
+void drawDickbutt(OLEDDisplay *display, int inframe){
+
+  int frame = inframe % fbutt_maxframe;
+  display->clear();
+  display->drawXbm(0, 0, fbutt_width, fbutt_width, fbutt[frame]);
+  display->display();
+}
+
+#define wbutt_maxframe 7
+void drawWbutt(OLEDDisplay *display, int inframe){
+
+  int frame = (inframe/2) % wbutt_maxframe;
+  display->clear();
+  display->drawXbm(-100+inframe, 0, wbutt_width, wbutt_width, wbutt[frame]);
+  display->display();
 }
 
 /* ======================================================================
@@ -350,26 +267,9 @@ void drawFrameI2C(OLEDDisplay *display, OLEDDisplayUiState* state, int16_t x, in
 
 // this array keeps function pointers to all frames
 // frames are the single views that slide from right to left
-FrameCallback frames[] = { drawFrameI2C };
 int numberOfFrames = 1;
 
 
-/* ======================================================================
-  Function: setReadyForUpdate
-  Purpose : Called by ticker to tell main loop we need to update data
-  Input   : -
-  Output  : -
-  Comments: -
-  ====================================================================== */
-void setReadyForUpdate() {
-  Serial.println("Setting readyForUpdate to true");
-  readyForUpdate = true;
-}
-
-/* ======================================================================
-  Function: setup
-  Purpose : you should know ;-)
-  ====================================================================== */
 void setup()
 {
   uint16_t led_color ;
@@ -418,31 +318,12 @@ void setup()
   // Set WiFi to station mode and disconnect from an AP if it was previously connected
 
   // Loop until connected or 20 sec time out
-  if (has_display) {
-    ui.setTargetFPS(30);
-    ui.setFrameAnimation(SLIDE_LEFT);
-    ui.setFrames(frames, numberOfFrames);
-    ui.init();
-    ui.disableAutoTransition();
-    display.flipScreenVertically();
-  }
 
-
-  // Rescan I2C every 5 seconds
-  ticker.attach(5, setReadyForUpdate);
 }
 
-/* ======================================================================
-  Function: loop
-  Purpose : you should know ;-)
-  ====================================================================== */
 void loop()
 {
-  if (has_display) {
-    if (readyForUpdate ) {
-      updateData(&display);
-    }
-  }
+  updateData(&display);
 
 }
 
