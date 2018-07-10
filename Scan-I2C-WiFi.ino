@@ -292,16 +292,11 @@ void updateData(OLEDDisplay *display) {
   //LedRGBOFF();
 }
 
-/* ======================================================================
-  Function: drawProgress
-  Purpose : prograss indication
-  Input   : OLED display pointer
-          percent of progress (0..100)
-          String above progress bar
-          String below progress bar
-  Output  : -
-  Comments: -
-  ====================================================================== */
+void drawDickbutt(OLEDDisplay *display, int frame){
+  display->clear();
+  display->drawXbm(0, 0, dickbutt_width, dickbutt_height, dickbutt_frames[frame]);
+}
+
 void drawProgress(OLEDDisplay *display, int percentage, String labeltop, String labelbot) {
     display->clear();
     display->setTextAlignment(TEXT_ALIGN_CENTER);
@@ -352,18 +347,6 @@ void drawFrameI2C(OLEDDisplay *display, OLEDDisplayUiState* state, int16_t x, in
 }
 
 
-/* ======================================================================
-  Function: drawFrameLogo
-  Purpose : Company logo info screen (called by OLED ui)
-  Input   : OLED display pointer
-  Output  : -
-  Comments: -
-  ====================================================================== */
-void drawFrameLogo(OLEDDisplay *display, OLEDDisplayUiState* state, int16_t x, int16_t y) {
-  display->clear();
-  display->drawXbm(x + (128 - ch2i_width) / 2, y, ch2i_width, ch2i_height, ch2i_bits);
-  ui.disableIndicator();
-}
 
 // this array keeps function pointers to all frames
 // frames are the single views that slide from right to left
@@ -424,7 +407,6 @@ void setup()
     display.init();
     display.flipScreenVertically();
     display.clear();
-    display.drawXbm((128 - ch2i_width) / 2, 0, ch2i_width, ch2i_height, ch2i_bits);
     display.display();
 
     display.setFont(ArialMT_Plain_10);
